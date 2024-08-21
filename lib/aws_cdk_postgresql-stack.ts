@@ -51,7 +51,7 @@ export class AwsCdkPostgresqlStack extends cdk.Stack {
       cloudwatchLogsExports: ['postgresql'],
       deletionProtection: false,
       databaseName: 'MyDatabase',
-      credentials: rds.Credentials.fromSecret(secretsmanager.Secret.fromSecretNameV2(this, 'DbSecret', 'db_secret')), // Use the secret from Secrets Manager
+      credentials: rds.Credentials.fromSecret(secretsmanager.Secret.fromSecretNameV2(this, 'DbSecret', 'db_secret')),
       publiclyAccessible: false
     });
 

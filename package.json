@@ -1,6 +1,6 @@
 {
-  "name": "aws_cdk_postgresql",
-  "version": "0.1.0",
+  "name": "initialize-db",
+  "version": "1.0.0",
   "bin": {
     "aws_cdk_postgresql": "bin/aws_cdk_postgresql.js"
   },
@@ -12,6 +12,7 @@
   },
   "devDependencies": {
     "@types/aws-sdk": "^2.7.0",
+    "@types/cfn-response": "^1.0.8",
     "@types/jest": "^29.5.12",
     "@types/node": "^20.11.19",
     "@types/pg": "^8.11.6",
@@ -22,11 +23,10 @@
     "typescript": "~5.3.3"
   },
   "dependencies": {
-    "aws-cdk-lib": "2.131.0",
-    "aws-sdk": "^2.1679.0",
-    "constructs": "^10.0.0",
-    "dotenv": "^16.4.5",
-    "pg": "^8.12.0",
-    "source-map-support": "^0.5.21"
-  }
+    "aws-sdk": "^2.814.0",
+    "cfn-response": "^1.0.1",
+    "dotenv": "^16.4.5"
+  },
+  "description": "Lambda function to initialize the database",
+  "main": "initialize-db.js"
 }
