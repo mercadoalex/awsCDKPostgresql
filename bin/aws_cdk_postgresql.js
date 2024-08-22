@@ -1,0 +1,8 @@
+#!/usr/bin/env node
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const cdk = require("@aws-cdk/core");
+const aws_cdk_postgresql_stack_1 = require("../lib/aws_cdk_postgresql-stack");
+const app = new cdk.App();
+new aws_cdk_postgresql_stack_1.AwsCdkPostgresqlStack(app, 'AwsCdkPostgresqlStack');
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiYXdzX2Nka19wb3N0Z3Jlc3FsLmpzIiwic291cmNlUm9vdCI6IiIsInNvdXJjZXMiOlsiYXdzX2Nka19wb3N0Z3Jlc3FsLnRzIl0sIm5hbWVzIjpbXSwibWFwcGluZ3MiOiI7OztBQUNBLHFDQUFxQztBQUNyQyw4RUFBd0U7QUFHeEUsTUFBTSxHQUFHLEdBQUcsSUFBSSxHQUFHLENBQUMsR0FBRyxFQUFFLENBQUM7QUFDMUIsSUFBSSxnREFBcUIsQ0FBQyxHQUFHLEVBQUUsdUJBQXVCLENBQUMsQ0FBQyIsInNvdXJjZXNDb250ZW50IjpbIiMhL3Vzci9iaW4vZW52IG5vZGVcbmltcG9ydCAqIGFzIGNkayBmcm9tICdAYXdzLWNkay9jb3JlJztcbmltcG9ydCB7IEF3c0Nka1Bvc3RncmVzcWxTdGFjayB9IGZyb20gJy4uL2xpYi9hd3NfY2RrX3Bvc3RncmVzcWwtc3RhY2snO1xuXG5cbmNvbnN0IGFwcCA9IG5ldyBjZGsuQXBwKCk7XG5uZXcgQXdzQ2RrUG9zdGdyZXNxbFN0YWNrKGFwcCwgJ0F3c0Nka1Bvc3RncmVzcWxTdGFjaycpO1xuXG5cbiJdfQ==
