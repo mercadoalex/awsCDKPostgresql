@@ -10,14 +10,20 @@ exports.handler = async (event: any, context: any) => {
   const secretName = process.env.DB_SECRET_NAME;
 
   if (!secretName) {
-    throw new Error('DB_SECRET_NAME environment variable is not set');
+    const errorMessage = 'DB_SECRET_NAME environment variable is not set';
+    console.error(errorMessage);
+    response.send(event, context, response.FAILED, { message: errorMessage });
+    return;
   }
 
   try {
     const secretValue = await secretsManager.getSecretValue({ SecretId: secretName }).promise();
 
     if (!secretValue.SecretString) {
-      throw new Error('SecretString is empty');
+      const errorMessage = 'SecretString is empty';
+      console.error(errorMessage);
+      response.send(event, context, response.FAILED, { message: errorMessage });
+      return;
     }
 
     const secret = JSON.parse(secretValue.SecretString);
@@ -55,7 +61,8 @@ exports.handler = async (event: any, context: any) => {
       await client.query(insertDataQuery);
     } catch (error) {
       console.error('Error executing queries', error);
-      throw new Error('Error executing queries');
+      response.send(event, context, response.FAILED, { message: 'Error executing queries' });
+      return;
     } finally {
       await client.end();
     }
