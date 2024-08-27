@@ -1,16 +1,18 @@
-import * as cdk from '@aws-cdk/core';
-import * as ec2 from '@aws-cdk/aws-ec2';
-import * as rds from '@aws-cdk/aws-rds';
-import * as lambda from '@aws-cdk/aws-lambda';
-import * as secretsmanager from '@aws-cdk/aws-secretsmanager';
-import * as path from 'path';
+import * as cdk from 'aws-cdk-lib';
+import { Construct } from 'constructs';
+import * as rds from 'aws-cdk-lib/aws-rds';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
+import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import * as dotenv from 'dotenv';
+import * as path from 'path';
 
 // Load environment variables from .env file
 dotenv.config();
 
 export class AwsCdkPostgresqlStack extends cdk.Stack {
-  constructor(scope: cdk.Construct, id: string, props?: cdk.StackProps) {
+  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
     // Retrieve PostgreSQL version from environment variables
@@ -24,59 +26,67 @@ export class AwsCdkPostgresqlStack extends cdk.Stack {
       throw new Error('Value missing for environment variable: POSTGRESMAJORVERSION. For example, "14"');
     }
 
-    // Create a VPC
-    const vpc = new ec2.Vpc(this, 'VPC', {
-      maxAzs: 2 // Default is all AZs in the region
+    // Define the VPC
+    const vpc = new ec2.Vpc(this, 'MyVpc', {
+      maxAzs: 3 // Default is all AZs in the region
     });
+    console.log('VPC created:', vpc.vpcId);
 
-    // Create a security group for the RDS instance
-    const securityGroup = new ec2.SecurityGroup(this, 'SecurityGroup', {
+    // Define the Security Group
+    const securityGroup = new ec2.SecurityGroup(this, 'MySecurityGroup', {
       vpc,
-      description: 'Allow postgres access',
-      allowAllOutbound: true
+      description: 'Allow ssh access to ec2 instances',
+      allowAllOutbound: true // Allow all outbound traffic by default
     });
-    securityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(5432), 'Allow PostgreSQL access');
+    console.log('Security Group created:', securityGroup.securityGroupId);
+
+    // Add ingress rule to allow SSH access
+    securityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(22), 'allow ssh access from the world');
+    console.log('Ingress rule added to Security Group');
+
+    // Retrieve database credentials from AWS Secrets Manager
+    const dbSecret = secretsmanager.Secret.fromSecretNameV2(this, 'DBSecret', 'db_secret');
 
     // Create the RDS instance
     const dbInstance = new rds.DatabaseInstance(this, 'PostgresInstance', {
       engine: rds.DatabaseInstanceEngine.postgres({
         version: rds.PostgresEngineVersion.of(postgresFullVersion, postgresMajorVersion)
       }),
-      instanceType: ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE3, ec2.InstanceSize.MICRO),
       vpc,
       securityGroups: [securityGroup],
-      multiAz: false,
+      credentials: rds.Credentials.fromSecret(dbSecret),
+      instanceType: ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE3, ec2.InstanceSize.MICRO), // Updated instance type
       allocatedStorage: 20,
+      maxAllocatedStorage: 100,
       storageType: rds.StorageType.GP2,
-      cloudwatchLogsExports: ['postgresql'],
+      multiAz: false,
+      publiclyAccessible: false,
+      autoMinorVersionUpgrade: true,
+      backupRetention: cdk.Duration.days(7),
+      deleteAutomatedBackups: true,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
       deletionProtection: false,
-      databaseName: 'MyDatabase',
-      credentials: rds.Credentials.fromSecret(secretsmanager.Secret.fromSecretNameV2(this, 'DbSecret', 'db_secret')),
-      publiclyAccessible: false
     });
+    console.log('RDS instance created:', dbInstance.instanceIdentifier);
 
-    // Create the Lambda function
-    const initDbFunction = new lambda.Function(this, 'InitDbFunction', {
-      runtime: lambda.Runtime.NODEJS_16_X,
+    // Define the Lambda function
+    const initializeDbLambda = new lambda.Function(this, 'InitializeDbLambda', {
+      runtime: lambda.Runtime.NODEJS_18_X,
       handler: 'initialize-db.handler',
-      code: lambda.Code.fromAsset(path.join(__dirname, 'lambda')),
+      code: lambda.Code.fromAsset(path.join(__dirname, '../lib')),
       environment: {
-        DB_HOST: dbInstance.dbInstanceEndpointAddress,
         DB_SECRET_NAME: 'db_secret'
       },
       vpc,
       securityGroups: [securityGroup]
     });
 
-    // Grant the Lambda function access to the RDS instance secret
-    dbInstance.secret?.grantRead(initDbFunction);
-
-    // Trigger the Lambda function after the RDS instance is created
-    const initDbResource = new cdk.CustomResource(this, 'InitDbResource', {
-      serviceToken: initDbFunction.functionArn
-    });
+    // Grant the Lambda function permissions to access the Secrets Manager and RDS
+    dbSecret.grantRead(initializeDbLambda);
+    dbInstance.grantConnect(initializeDbLambda);
+    initializeDbLambda.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['rds:*'],
+      resources: [dbInstance.instanceArn]
+    }));
   }
 }
-
-const app = new cdk.App();
-new AwsCdkPostgresqlStack(app, 'AwsCdkPostgresqlStack');

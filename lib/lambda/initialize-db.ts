@@ -1,84 +1,82 @@
-import { Client } from 'pg';
-import * as AWS from 'aws-sdk';
-import * as response from 'cfn-response';
+import * as cdk from 'aws-cdk-lib';
+import { Construct } from 'constructs';
+import * as rds from 'aws-cdk-lib/aws-rds';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
+import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import * as dotenv from 'dotenv';
+import * as path from 'path';
 
-const secretsManager = new AWS.SecretsManager();
+// Load environment variables from .env file
+dotenv.config();
 
-exports.handler = async (event: any, context: any) => {
-  console.log('Received event:', JSON.stringify(event, null, 2));
+export class AwsCdkPostgresqlStack extends cdk.Stack {
+  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+    super(scope, id, props);
 
-  const secretName = process.env.DB_SECRET_NAME;
+    // Retrieve PostgreSQL version from environment variables
+    const postgresFullVersion = process.env.POSTGRESFULLVERSION ?? "";
+    const postgresMajorVersion = process.env.POSTGRESMAJORVERSION ?? "";
 
-  if (!secretName) {
-    const errorMessage = 'DB_SECRET_NAME environment variable is not set';
-    console.error(errorMessage);
-    response.send(event, context, response.FAILED, { message: errorMessage });
-    return;
-  }
-
-  try {
-    const secretValue = await secretsManager.getSecretValue({ SecretId: secretName }).promise();
-
-    if (!secretValue.SecretString) {
-      const errorMessage = 'SecretString is empty';
-      console.error(errorMessage);
-      response.send(event, context, response.FAILED, { message: errorMessage });
-      return;
+    if (!postgresFullVersion) {
+      throw new Error('Value missing for environment variable: POSTGRESFULLVERSION. For example, "14.2"');
+    }
+    if (!postgresMajorVersion) {
+      throw new Error('Value missing for environment variable: POSTGRESMAJORVERSION. For example, "14"');
     }
 
-    const secret = JSON.parse(secretValue.SecretString);
+    // Define the VPC
+    const vpc = new ec2.Vpc(this, 'MyVpc', {
+      maxAzs: 3 // Default is all AZs in the region
+    });
+    console.log('VPC created:', vpc.vpcId);
 
-    const client = new Client({
-      host: process.env.DB_HOST,
-      port: 5432,
-      user: secret.username,
-      password: secret.password,
-      database: secret.dbname,
+    // Define the Security Group
+    const securityGroup = new ec2.SecurityGroup(this, 'MySecurityGroup', {
+      vpc,
+      description: 'Allow ssh access to ec2 instances',
+      allowAllOutbound: true   // Can be set to false
+    });
+    console.log('Security Group created:', securityGroup.securityGroupId);
+
+    // Add ingress rule to allow SSH access
+    securityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(22), 'allow ssh access from the world');
+    console.log('Ingress rule added to Security Group');
+
+    // Retrieve database credentials from AWS Secrets Manager
+    const dbSecret = secretsmanager.Secret.fromSecretNameV2(this, 'DBSecret', 'db_secret');
+
+    // Create the RDS instance
+    const dbInstance = new rds.DatabaseInstance(this, 'PostgresInstance', {
+      engine: rds.DatabaseInstanceEngine.postgres({
+        version: rds.PostgresEngineVersion.of(postgresFullVersion, postgresMajorVersion)
+      }),
+      vpc,
+      securityGroups: [securityGroup],
+      credentials: rds.Credentials.fromSecret(dbSecret),
+      // Other properties for the RDS instance
+    });
+    console.log('RDS instance created:', dbInstance.instanceIdentifier);
+
+    // Define the Lambda function
+    const initializeDbLambda = new lambda.Function(this, 'InitializeDbLambda', {
+      runtime: lambda.Runtime.NODEJS_14_X,
+      handler: 'initialize-db.handler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../lib')),
+      environment: {
+        DB_SECRET_NAME: 'db_secret'
+      },
+      vpc,
+      securityGroups: [securityGroup]
     });
 
-    await client.connect();
-
-    const createTableQuery = `
-      CREATE TABLE IF NOT EXISTS Employee (
-        ID SERIAL PRIMARY KEY,
-        FirstName VARCHAR(50),
-        LastName VARCHAR(50),
-        ZIP VARCHAR(10),
-        Country VARCHAR(50),
-        Salary INTEGER
-      );
-    `;
-
-    const insertDataQuery = `
-      INSERT INTO Employee (FirstName, LastName, ZIP, Country, Salary) VALUES
-      ('John', 'Doe', '12345', 'USA', 50000),
-      ('Jane', 'Smith', '54321', 'USA', 60000),
-      ('Alice', 'Johnson', '67890', 'Canada', 70000);
-    `;
-
-    try {
-      await client.query(createTableQuery);
-      await client.query(insertDataQuery);
-    } catch (error) {
-      console.error('Error executing queries', error);
-      response.send(event, context, response.FAILED, { message: 'Error executing queries' });
-      return;
-    } finally {
-      await client.end();
-    }
-
-    // Send success response to CloudFormation
-    response.send(event, context, response.SUCCESS, {
-      statusCode: 200,
-      body: JSON.stringify('Database initialized successfully!'),
-    });
-  } catch (error) {
-    console.error('Error:', error);
-
-    // Send failure response to CloudFormation
-    response.send(event, context, response.FAILED, {
-      statusCode: 500,
-      body: JSON.stringify('Error initializing database'),
-    });
+    // Grant the Lambda function permissions to access the Secrets Manager and RDS
+    dbSecret.grantRead(initializeDbLambda);
+    dbInstance.grantConnect(initializeDbLambda);
+    initializeDbLambda.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['rds:*'],
+      resources: [dbInstance.instanceArn]
+    }));
   }
-};
+}
